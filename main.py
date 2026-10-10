@@ -2,6 +2,12 @@ import json
 from ai_2 import ask_ai
 from weather import get_weather
 from notes import add_note, read_notes
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BOT_TOKEN = os.environ["BOT_TOKEN"]
 
 def build_router_prompt(text):
     """Собирает промпт для роутера из реестров tools и tool_args."""
