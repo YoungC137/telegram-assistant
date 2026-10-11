@@ -1,4 +1,5 @@
 import os
+import sys
 
 import telebot
 from dotenv import load_dotenv
@@ -7,6 +8,24 @@ from main import run_router
 
 load_dotenv()
 BOT_TOKEN = os.environ["BOT_TOKEN"]
+
+PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bot.pid')
+
+
+def ensure_single_instance():
+    """Telegram разрешает только один getUpdates. Не даём подняться второму экземпляру."""
+    if os.path.exists(PID_FILE):
+        try:
+            with open(PID_FILE) as f:
+                old_pid = int(f.read().strip())
+            os.kill(old_pid, 0)  # проверка живости: SIGNUM 0 ничего не шлёт, но упадёт на мертвом
+        except (ValueError, OSError, ProcessLookupError):
+            pass  # файл устарел — процесс давно мёртв, перезапишем
+        else:
+            print(f'Бот уже запущен (PID {old_pid}). Сначала: kill {old_pid}')
+            sys.exit(1)
+    with open(PID_FILE, 'w') as f:
+        f.write(str(os.getpid()))
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -31,5 +50,13 @@ def handle_message(message):
 
 
 if __name__ == '__main__':
+    ensure_single_instance()
     print('Бот запущен, Ctrl+C — стоп')
-    bot.polling(none_stop=True)
+    try:
+        bot.polling(none_stop=True)
+    finally:
+        # убираем за собой, чтобы следующий старт не считал нас живыми
+        try:
+            os.remove(PID_FILE)
+        except OSError:
+            pass
