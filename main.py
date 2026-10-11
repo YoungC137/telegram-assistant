@@ -58,33 +58,27 @@ def validate_decision(raw):
 def run_weather(city):
     try:
         temp, code, name = get_weather(city)
-        print(f'Погода в {name}: {temp}°C, код погоды {code}')
+        return f'Погода в {name}: {temp}°C, код погоды {code}'
     except Exception as e:
-        print(f'Ошибка получения погоды: {e}')
+        return f'Ошибка получения погоды: {e}'
 
 def run_chat(text):
-    answer = ask_ai(f"Ответь на вопрос пользователя: {text}")
-    print(answer)
+    return ask_ai(f"Ответь коротко, 1-2 предложения, без рассуждений. Вопрос: {text}")
 
 def run_calc(expression):
     result = _safe_eval(expression)
     if result is not None:
-        print(f"= {result}")
-    else:
-        print("Не удалось посчитать локально, спросил у AI:")
-        answer = ask_ai(f"Посчитай аккуратно: {expression}")
-        print(answer)
+        return f"= {result}"
+    return "Не удалось посчитать это выражение локально"
 
 def run_notes_add(text):
-    print(add_note(str(text)))
+    return add_note(str(text))
 
 def run_notes_show():
     notes = read_notes()
     if not notes:
-        print('Заметок пока нет')
-        return
-    for i, note in enumerate(notes, 1):
-        print(f'{i}. {note}')
+        return 'Заметок пока нет'
+    return '\n'.join(f'{i}. {note}' for i, note in enumerate(notes, 1))
 
 tools = {
     'weather': run_weather,
@@ -152,18 +146,18 @@ def normalize_args(action, args, user_text):
     return {k: v for k, v in args.items() if k in tool_args[action]}
 
 def run_router(text):
+    """Главная точка входа: текст пользователя -> готовый строковый ответ."""
     raw = ask_with_retry(build_router_prompt(text), validate_decision)
     decision = validate_decision(raw)
     if decision is None:
-        print('AI трижды вернула невалидное решение, fallback в chat')
-        return run_chat(text)
+        return 'AI трижды вернула невалидное решение. ' + run_chat(text)
     action = decision['action']
     args = normalize_args(action, decision['args'], text)
-    print(f'Действие: {action}, args: {args}')
+    print(f'Действие: {action}, args: {args}')  # лог в консоль, пользователю не уходит
     try:
-        tools[action](**args)
+        return tools[action](**args)
     except Exception as e:
-        print(f'Ошибка выполнения действия: {type(e).__name__}: {e}')
+        return f'Ошибка выполнения действия: {type(e).__name__}: {e}'
 
 
 def main():
@@ -176,7 +170,7 @@ def main():
                 break
         except KeyboardInterrupt:
             break
-        run_router(text)
+        print(run_router(text))
 
 
 if __name__ == '__main__':
