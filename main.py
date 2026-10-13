@@ -4,6 +4,7 @@ from ai_2 import ask_ai
 from weather import get_weather
 from notes import add_note, read_notes
 from dotenv import load_dotenv
+from crypto import get_price
 
 # .env рядом со скриптом, а не в текущей папке: файл должен находиться,
 # откуда бы его ни запустили (python3 main.py, python3 bot.py, cron).
@@ -58,6 +59,12 @@ def validate_decision(raw):
         return None
     return decision
 
+def run_crypto(coin):
+    try:
+        price = get_price(coin)
+        return f'{coin.capitalize()}:{price:,}r'.replace(',', ' ')
+    except Exception as e:
+        return f'Ошибка получения цены {coin}: {e}'
 def run_weather(city):
     try:
         temp, code, name = get_weather(city)
@@ -92,6 +99,7 @@ def run_notes_show():
 
 
 tools = {
+    'crypto': {'func': run_crypto, 'args': {'coin': 'название монеты на английском: bitcoin, ethereum, solana'}},
     'weather':  {'func': run_weather, 'args': {'city': 'город, например Владивосток'}},
     'calc':     {'func': run_calc,    'args': {'expression': 'математическое выражение, например 2+2*2'}},
     'notes_add':{'func': run_notes_add, 'args': {'text': 'текст заметки одним предложением'}},
