@@ -6,6 +6,6 @@ def test_sec():
 def test_main():
     assert _safe_eval('привет') == None
 def test_validate_decision():
-    assert isinstance(validate_decision('{"action":"chat","args":{}}'),dict)
+    assert isinstance(validate_decision('{"action":"notes_show","args":{}}'), dict)
 def test_validate_decision_no_action():
     assert validate_decision('{"args":{}}') is None

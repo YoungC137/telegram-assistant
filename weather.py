@@ -7,7 +7,7 @@ DEFAULT_LON = 131.89
 def _geocode(city):
     resp = requests.get(
         "https://geocoding-api.open-meteo.com/v1/search",
-        params={'name': city, 'count': 1},
+        params={'name': city, 'count': 1, 'language': 'ru'},
         timeout=10
     )
     if resp.status_code != 200:
@@ -21,7 +21,12 @@ def _geocode(city):
 
 def get_weather(city=None):
     if city:
-        lat, lon, name = _geocode(city) or (DEFAULT_LAT, DEFAULT_LON, city)
+        found = _geocode(city)
+        if found is None:
+            # Молча подменить город дефолтным — это неправдивый ответ:
+            # пользователь просил Пекин, а получил погоду во Владивостоке.
+            raise ValueError(f'Город {city!r} не найден')
+        lat, lon, name = found
     else:
         lat, lon, name = DEFAULT_LAT, DEFAULT_LON, 'Владивосток'
     resp = requests.get(url, params={
