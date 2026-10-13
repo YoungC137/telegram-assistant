@@ -1,22 +1,25 @@
 import json
+import os
 from ai_2 import ask_ai
 from weather import get_weather
 from notes import add_note, read_notes
-import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# .env рядом со скриптом, а не в текущей папке: файл должен находиться,
+# откуда бы его ни запустили (python3 main.py, python3 bot.py, cron).
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
+# BOT_TOKEN отсюда убран: в main.py он не используется, а строка
+# os.environ["BOT_TOKEN"] падала с KeyError при импорте файла без .env —
+# это роняло и bot.py, который импортирует main.
 
 def build_router_prompt(text):
-    """Собирает промпт для роутера из реестров tools и tool_args."""
     names = ', '.join(tools)
     desc = '\n'.join(
         f"- {name}: аргументы " + (
-            ', '.join(f'{k} ({hint})' for k, hint in args.items()) or 'не нужны'
+            ', '.join(f'{k} ({hint})' for k, hint in t['args'].items()) or 'не нужны'
         )
-        for name, args in tool_args.items()
+        for name, t in tools.items()
     )
     return f'''
 Выбери действие для запроса: {text}
@@ -41,20 +44,20 @@ def validate_decision(raw):
         return None
     try:
         decision = json.loads(raw)
-    except (json.JSONDecodeError,TypeError):
+    except (json.JSONDecodeError, TypeError):
         return None
-    if not isinstance(decision, dict) or (not 'action' in decision ) or (not 'args' in decision):
+    if not isinstance(decision, dict) or 'action' not in decision or 'args' not in decision:
         return None
     if decision['action'] not in tools:
         return None
     if not isinstance(decision['args'], dict):
         return None
-    required = tool_args[decision['action']]
-    if decision['action'] != 'chat':
-        missing = [k for k in required if k not in decision['args']]
-        if missing:
-            return None
+    required = tools[decision['action']]['args']
+    missing = [k for k in required if k not in decision['args']]
+    if missing:
+        return None
     return decision
+
 def run_weather(city):
     try:
         temp, code, name = get_weather(city)
@@ -63,7 +66,14 @@ def run_weather(city):
         return f'Ошибка получения погоды: {e}'
 
 def run_chat(text):
-    return ask_ai(f"Ответь коротко, 1-2 предложения, без рассуждений. Вопрос: {text}")
+    prompt = f"Ответь коротко, 1-2 предложения, без рассуждений. Вопрос: {text}"
+    try:
+        answer = ask_ai(prompt)
+    except Exception as e:
+        # Без этого исключение уходит в bot.py и пользователь видит
+        # 'Внутренняя ошибка: ConnectionError' вместо внятной подсказки.
+        return f'Локальная модель недоступна ({type(e).__name__}). Проверь, что Ollama запущена.'
+    return answer or 'Модель вернула пустой ответ. Проверь, что модель на месте: ollama list'
 
 def run_calc(expression):
     result = _safe_eval(expression)
@@ -80,22 +90,15 @@ def run_notes_show():
         return 'Заметок пока нет'
     return '\n'.join(f'{i}. {note}' for i, note in enumerate(notes, 1))
 
+
 tools = {
-    'weather': run_weather,
-    'calc': run_calc,
-    'notes_add': run_notes_add,
-    'notes_show': run_notes_show,
-    'chat': run_chat
+    'weather':  {'func': run_weather, 'args': {'city': 'город, например Владивосток'}},
+    'calc':     {'func': run_calc,    'args': {'expression': 'математическое выражение, например 2+2*2'}},
+    'notes_add':{'func': run_notes_add, 'args': {'text': 'текст заметки одним предложением'}},
+    'notes_show':{'func': run_notes_show, 'args': {}},
+    'chat':     {'func': run_chat,    'args': {'text': 'исходный запрос пользователя дословно'}},
 }
 
-# какие аргументы ждёт каждое действие: используется в промпте и в normalize_args
-tool_args = {
-    'weather': {'city': 'город, например Владивосток'},
-    'calc': {'expression': 'математическое выражение, например 2+2*2'},
-    'notes_add': {'text': 'текст заметки одним предложением'},
-    'notes_show': {},
-    'chat': {'text': 'исходный запрос пользователя дословно'},
-}
 
 def _safe_eval(expr):
     """Безопасно считает выражение. Возвращает число или None."""
@@ -130,32 +133,45 @@ def _safe_eval(expr):
 
   
 def ask_with_retry(prompt, validator, max_attempts=3):
-    """Спрашивает AI, пока ответ не пройдёт validator. Возвращает сырую строку или None."""
+    last_raw = None
     for attempt in range(max_attempts):
-        raw = ask_ai(prompt, json_mode=True)
-        if validator(raw):
-            return raw
+        if attempt == 0:
+            current, temp = prompt, 0
+        else:
+            # При temperature=0 повтор того же промпта возвращает байт в байт
+            # тот же ответ: три попытки превращались в тройную задержку без
+            # шанса на другой результат. На повторе меняем и подсказку, и температуру.
+            current = prompt + (
+                '\n\nПрошлый ответ не прошёл проверку. Верни ТОЛЬКО объект вида '
+                '{"action": "...", "args": {...}} без текста до и после него.'
+            )
+            temp = 0.7
+        last_raw = ask_ai(current, json_mode=True, temperature=temp)
+        if validator(last_raw):
+            return last_raw
         print(f'Попытка {attempt + 1} провалилась')
-    print('Попытки закончились, возвращаю None')
+    # Валидный ответ так и не получили. Логируем, что именно вернула модель,
+    # иначе фолбэк в chat выглядит как тихая потеря намерения пользователя.
+    print(f'РОУТЕР ИСЧЕРПАЛ ПОПЫТКИ. Последний ответ модели: {str(last_raw)[:300]!r}')
     return None
 
 def normalize_args(action, args, user_text):
-    """Оставляет только известные поля. Для chat текст по умолчанию — исходный запрос."""
-    if action == 'chat':
-        return {'text': args.get('text') or user_text}
-    return {k: v for k, v in args.items() if k in tool_args[action]}
+    """Оставляет только известные поля."""
+    return {k: v for k, v in args.items() if k in tools[action]['args']}
 
 def run_router(text):
-    """Главная точка входа: текст пользователя -> готовый строковый ответ."""
-    raw = ask_with_retry(build_router_prompt(text), validate_decision)
+    try:
+        raw = ask_with_retry(build_router_prompt(text), validate_decision)
+    except Exception as e:
+        return f'Локальная модель недоступна ({type(e).__name__}). Проверь, что Ollama запущена.'
     decision = validate_decision(raw)
     if decision is None:
         return 'AI трижды вернула невалидное решение. ' + run_chat(text)
     action = decision['action']
     args = normalize_args(action, decision['args'], text)
-    print(f'Действие: {action}, args: {args}')  # лог в консоль, пользователю не уходит
+    print(f'Действие: {action}, args: {args}')
     try:
-        return tools[action](**args)
+        return tools[action]['func'](**args)
     except Exception as e:
         return f'Ошибка выполнения действия: {type(e).__name__}: {e}'
 
