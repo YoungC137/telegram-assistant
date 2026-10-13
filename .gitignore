@@ -6,3 +6,5 @@ __pycache__/
 *.log
 bot.pid
 output.json
+notes.txt
+.pytest_cache/
