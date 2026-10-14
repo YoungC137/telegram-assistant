@@ -1,4 +1,4 @@
-openai
+ollama
 requests
 python-dotenv
 pyTelegramBotAPI
