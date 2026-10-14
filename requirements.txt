@@ -2,3 +2,4 @@ ollama
 requests
 python-dotenv
 pyTelegramBotAPI
+pytest

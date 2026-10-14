@@ -1,0 +1,29 @@
+name: Тесты
+
+# Запускать при каждом пуше в main и при pull request'ах
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Скачать код репозитория на виртуальную машину
+      - uses: actions/checkout@v4
+
+      # 2. Поставить Python
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 3. Установить зависимости из requirements.txt
+      - name: Зависимости
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 4. Запустить тесты. Любой упавший assert = красный статус коммита
+      - name: Pytest
+        run: python -m pytest -v
