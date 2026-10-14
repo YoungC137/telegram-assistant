@@ -7,7 +7,7 @@ import time
 import telebot
 from dotenv import load_dotenv
 
-from ai_2 import warm_up
+from ai_2 import ask_ai  # noqa: F401  # импорт заодно грузит .env с AI_API_KEY
 from main import run_router
 
 # .env ищем рядом со скриптом, а не в текущей папке: load_dotenv() без пути
@@ -113,8 +113,7 @@ def handle_message(message):
 
 if __name__ == '__main__':
     ensure_single_instance()
-    print('Прогреваю модель…')
-    warm_up()
+    # Прогрев не нужен: модель крутится на сервере Groq, а не в нашей памяти.
     print('Бот запущен, Ctrl+C — стоп')
     try:
         bot.polling(none_stop=True)
